@@ -285,9 +285,11 @@
    "read_only": 1
   },
   {
+   "collapsible": 1,
    "description": "Select, to make the customer searchable with these fields",
    "fieldname": "primary_address_and_contact_detail",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Primary Address and Contact Detail"
   },
   {
@@ -329,6 +331,7 @@
    "collapsible": 1,
    "fieldname": "default_receivable_accounts",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Accounting"
   },
   {
@@ -342,6 +345,7 @@
    "collapsible": 1,
    "fieldname": "credit_limit_section",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Credit Limit and Payment Terms"
   },
   {
@@ -393,6 +397,7 @@
    "collapsible": 1,
    "fieldname": "column_break_38",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Loyalty Points"
   },
   {
@@ -414,6 +419,7 @@
    "collapsible_depends_on": "default_sales_partner",
    "fieldname": "sales_team_section_break",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Sales Partner and Commission",
    "oldfieldtype": "Section Break",
    "options": "fa fa-group"
@@ -439,6 +445,7 @@
    "collapsible_depends_on": "sales_team",
    "fieldname": "sales_team_section",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Sales Team"
   },
   {
@@ -469,7 +476,7 @@
  "icon": "fa fa-user",
  "idx": 363,
  "image_field": "image",
- "modified": "2019-09-06 12:40:31.801424",
+ "modified": "2019-10-22 14:47:55.857412",
  "modified_by": "Administrator",
  "module": "Selling",
  "name": "Customer",

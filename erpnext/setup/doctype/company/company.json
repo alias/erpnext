@@ -140,6 +140,7 @@
   {
    "fieldname": "default_finance_book",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Default Finance Book",
    "options": "Finance Book"
   },
@@ -175,6 +176,7 @@
    "collapsible": 1,
    "fieldname": "sales_settings",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Sales Settings"
   },
   {
@@ -244,6 +246,7 @@
   {
    "fieldname": "default_warehouse_for_sales_return",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Default warehouse for Sales Return",
    "options": "Warehouse"
   },
@@ -262,6 +265,7 @@
   {
    "fieldname": "create_chart_of_accounts_based_on",
    "fieldtype": "Select",
+   "hidden": 1,
    "label": "Create Chart Of Accounts Based On",
    "options": "\nStandard Template\nExisting Company"
   },
@@ -269,6 +273,7 @@
    "depends_on": "eval:doc.create_chart_of_accounts_based_on===\"Standard Template\"",
    "fieldname": "chart_of_accounts",
    "fieldtype": "Select",
+   "hidden": 1,
    "label": "Chart Of Accounts Template",
    "no_copy": 1
   },
@@ -293,6 +298,7 @@
   {
    "fieldname": "default_settings",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Accounts Settings",
    "oldfieldtype": "Section Break"
   },
@@ -456,7 +462,8 @@
   },
   {
    "fieldname": "section_break_22",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "hidden": 1
   },
   {
    "depends_on": "eval:!doc.__islocal",
@@ -490,6 +497,7 @@
    "depends_on": "eval:!doc.__islocal",
    "fieldname": "auto_accounting_for_stock_settings",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Stock Settings"
   },
   {
@@ -536,6 +544,7 @@
    "collapsible": 1,
    "fieldname": "fixed_asset_depreciation_settings",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Fixed Asset Depreciation Settings"
   },
   {
@@ -597,6 +606,7 @@
    "collapsible": 1,
    "fieldname": "budget_detail",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Budget Detail"
   },
   {
@@ -667,6 +677,7 @@
   {
    "fieldname": "registration_info",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "oldfieldtype": "Section Break",
    "width": "50%"
   },
@@ -712,12 +723,14 @@
   {
    "fieldname": "default_selling_terms",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Default Selling Terms",
    "options": "Terms and Conditions"
   },
   {
    "fieldname": "default_buying_terms",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Default Buying Terms",
    "options": "Terms and Conditions"
   }
@@ -725,7 +738,7 @@
  "icon": "fa fa-building",
  "idx": 1,
  "image_field": "company_logo",
- "modified": "2019-07-04 22:20:45.104307",
+ "modified": "2019-10-21 20:53:43.391867",
  "modified_by": "Administrator",
  "module": "Setup",
  "name": "Company",
