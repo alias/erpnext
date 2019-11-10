@@ -13,7 +13,6 @@
   "naming_series",
   "salutation",
   "customer_name",
-  "customer_name_1",
   "gender",
   "customer_type",
   "default_bank_account",
@@ -465,17 +464,12 @@
    "fieldtype": "Table",
    "label": "Credit Limit",
    "options": "Customer Credit Limit"
-  },
-  {
-   "fieldname": "customer_name_1",
-   "fieldtype": "Data",
-   "label": "Full Name Addition"
   }
  ],
  "icon": "fa fa-user",
  "idx": 363,
  "image_field": "image",
- "modified": "2019-11-06 16:07:33.570639",
+ "modified": "2019-09-06 12:40:31.801424",
  "modified_by": "Administrator",
  "module": "Selling",
  "name": "Customer",
