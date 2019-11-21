@@ -3,9 +3,9 @@ PCG Changes
 
 Open Questions
 --------------
-Where are the custome doctypes?
+Where are the custom doctypes (properties)? 
 
 
 Database (beside pure Data)
 ---------------------------
-Doctypes with  custom forms: ysee database> Customer, Company (reduced fields)
+Doctypes with  custom forms see "tabCustom Fields"
