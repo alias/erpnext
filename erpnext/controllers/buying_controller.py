@@ -44,6 +44,7 @@ class BuyingController(StockController):
 		self.validate_stock_or_nonstock_items()
 		self.validate_warehouse()
 		self.set_supplier_address()
+		self.validate_asset_return()
 
 		if self.doctype=="Purchase Invoice":
 			self.validate_purchase_receipt_if_update_stock()
@@ -99,6 +100,19 @@ class BuyingController(StockController):
 				for d in tax_for_valuation:
 					d.category = 'Total'
 				msgprint(_('Tax Category has been changed to "Total" because all the Items are non-stock items'))
+	
+	def validate_asset_return(self):
+		if self.doctype not in ['Purchase Receipt', 'Purchase Invoice'] or not self.is_return:
+			return
+
+		purchase_doc_field = 'purchase_receipt' if self.doctype == 'Purchase Receipt' else 'purchase_invoice'
+		not_cancelled_asset = [d.name for d in frappe.db.get_all("Asset", {
+			purchase_doc_field: self.return_against,
+			"docstatus": 1
+		})]
+		if self.is_return and len(not_cancelled_asset):
+			frappe.throw(_("{} has submitted assets linked to it. You need to cancel the assets to create purchase return.".format(self.return_against)),
+				title=_("Not Allowed"))
 
 	def get_asset_items(self):
 		if self.doctype not in ['Purchase Order', 'Purchase Invoice', 'Purchase Receipt']:
@@ -265,16 +279,17 @@ class BuyingController(StockController):
 
 			fg_yet_to_be_received = qty_to_be_received_map.get(item_key)
 
-			raw_material_data = backflushed_raw_materials_map.get(item_key, {})
-
-			consumed_qty = raw_material_data.get('qty', 0)
-			consumed_serial_nos = raw_material_data.get('serial_nos', '')
-			consumed_batch_nos = raw_material_data.get('batch_nos', '')
-
 			transferred_batch_qty_map = get_transferred_batch_qty_map(item.purchase_order, item.item_code)
 			backflushed_batch_qty_map = get_backflushed_batch_qty_map(item.purchase_order, item.item_code)
 
 			for raw_material in transferred_raw_materials + non_stock_items:
+				rm_item_key = '{}{}'.format(raw_material.rm_item_code, item.purchase_order)
+				raw_material_data = backflushed_raw_materials_map.get(rm_item_key, {})
+
+				consumed_qty = raw_material_data.get('qty', 0)
+				consumed_serial_nos = raw_material_data.get('serial_nos', '')
+				consumed_batch_nos = raw_material_data.get('batch_nos', '')
+
 				transferred_qty = raw_material.qty
 
 				rm_qty_to_be_consumed = transferred_qty - consumed_qty
@@ -643,19 +658,32 @@ class BuyingController(StockController):
 					# If asset has to be auto created
 					# Check for asset naming series
 					if item_data.get('asset_naming_series'):
+						created_assets = []
+
 						for qty in range(cint(d.qty)):
-							self.make_asset(d)
-						is_plural = 's' if cint(d.qty) != 1 else ''
-						messages.append(_('{0} Asset{2} Created for <b>{1}</b>').format(cint(d.qty), d.item_code, is_plural))
+							asset = self.make_asset(d)
+							created_assets.append(asset)
+						
+						if len(created_assets) > 5:
+							# dont show asset form links if more than 5 assets are created
+							messages.append(_('{} Asset{} created for {}').format(len(created_assets), is_plural, frappe.bold(d.item_code)))
+						else:
+							assets_link = list(map(lambda d: frappe.utils.get_link_to_form('Asset', d), created_assets))
+							assets_link = frappe.bold(','.join(assets_link))
+
+							is_plural = 's' if len(created_assets) != 1 else ''
+							messages.append(
+								_('Asset{} {assets_link} created for {}').format(is_plural, frappe.bold(d.item_code), assets_link=assets_link)
+							)
 					else:
-						frappe.throw(_("Row {1}: Asset Naming Series is mandatory for the auto creation for item {0}")
-							.format(d.item_code, d.idx))
+						frappe.throw(_("Row {}: Asset Naming Series is mandatory for the auto creation for item {}")
+							.format(d.idx, frappe.bold(d.item_code)))
 				else:
-					messages.append(_("Assets not created for <b>{0}</b>. You will have to create asset manually.")
-						.format(d.item_code))
+					messages.append(_("Assets not created for {0}. You will have to create asset manually.")
+						.format(frappe.bold(d.item_code)))
 
 		for message in messages:
-			frappe.msgprint(message, title="Success")
+			frappe.msgprint(message, title="Success", indicator="green")
 
 	def make_asset(self, row):
 		if not row.asset_location:
@@ -687,6 +715,8 @@ class BuyingController(StockController):
 		asset.set_missing_values()
 		asset.insert()
 
+		return asset.name
+
 	def update_fixed_asset(self, field, delete_asset = False):
 		for d in self.get("items"):
 			if d.is_fixed_asset:
@@ -716,7 +746,7 @@ class BuyingController(StockController):
 							asset.supplier = None
 						if asset.docstatus == 1 and delete_asset:
 							frappe.throw(_('Cannot cancel this document as it is linked with submitted asset {0}.\
-								Please cancel the it to continue.').format(asset.name))
+								Please cancel the it to continue.').format(frappe.utils.get_link_to_form('Asset', asset.name)))
 
 					asset.flags.ignore_validate_update_after_submit = True
 					asset.flags.ignore_mandatory = True

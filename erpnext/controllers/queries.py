@@ -3,10 +3,11 @@
 
 from __future__ import unicode_literals
 import frappe
+import erpnext
 from frappe.desk.reportview import get_match_cond, get_filters_cond
-from frappe.utils import nowdate
+from frappe.utils import nowdate, getdate
 from collections import defaultdict
-
+from erpnext.stock.get_item_details import _get_item_tax_template
 
  # searches for active employees
 def employee_query(doctype, txt, searchfield, start, page_len, filters):
@@ -129,23 +130,26 @@ def supplier_query(doctype, txt, searchfield, start, page_len, filters):
 		})
 
 def tax_account_query(doctype, txt, searchfield, start, page_len, filters):
+	company_currency = erpnext.get_company_currency(filters.get('company'))
+
 	tax_accounts = frappe.db.sql("""select name, parent_account	from tabAccount
 		where tabAccount.docstatus!=2
 			and account_type in (%s)
 			and is_group = 0
 			and company = %s
+			and account_currency = %s
 			and `%s` LIKE %s
 		order by idx desc, name
 		limit %s, %s""" %
-		(", ".join(['%s']*len(filters.get("account_type"))), "%s", searchfield, "%s", "%s", "%s"),
-		tuple(filters.get("account_type") + [filters.get("company"), "%%%s%%" % txt,
+		(", ".join(['%s']*len(filters.get("account_type"))), "%s", "%s", searchfield, "%s", "%s", "%s"),
+		tuple(filters.get("account_type") + [filters.get("company"), company_currency, "%%%s%%" % txt,
 			start, page_len]))
 	if not tax_accounts:
 		tax_accounts = frappe.db.sql("""select name, parent_account	from tabAccount
 			where tabAccount.docstatus!=2 and is_group = 0
-				and company = %s and `%s` LIKE %s limit %s, %s"""
-			% ("%s", searchfield, "%s", "%s", "%s"),
-			(filters.get("company"), "%%%s%%" % txt, start, page_len))
+				and company = %s and account_currency = %s and `%s` LIKE %s limit %s, %s""" #nosec
+			% ("%s", "%s", searchfield, "%s", "%s", "%s"),
+			(filters.get("company"), company_currency, "%%%s%%" % txt, start, page_len))
 
 	return tax_accounts
 
@@ -311,6 +315,7 @@ def get_batch_no(doctype, txt, searchfield, start, page_len, filters):
 				and sle.item_code = %(item_code)s
 				and sle.warehouse = %(warehouse)s
 				and (sle.batch_no like %(txt)s
+				or batch.expiry_date like %(txt)s
 				or batch.manufacturing_date like %(txt)s)
 				and batch.docstatus < 2
 				{cond}
@@ -329,6 +334,7 @@ def get_batch_no(doctype, txt, searchfield, start, page_len, filters):
 			where batch.disabled = 0
 			and item = %(item_code)s
 			and (name like %(txt)s
+			or expiry_date like %(txt)s
 			or manufacturing_date like %(txt)s)
 			and docstatus < 2
 			{0}
@@ -484,7 +490,7 @@ def item_manufacturer_query(doctype, txt, searchfield, start, page_len, filters)
 @frappe.whitelist()
 def get_purchase_receipts(doctype, txt, searchfield, start, page_len, filters):
 	query = """
-		select pr.name 
+		select pr.name
 		from `tabPurchase Receipt` pr, `tabPurchase Receipt Item` pritem
 		where pr.docstatus = 1 and pritem.parent = pr.name
 		and pr.name like {txt}""".format(txt = frappe.db.escape('%{0}%'.format(txt)))
@@ -497,7 +503,7 @@ def get_purchase_receipts(doctype, txt, searchfield, start, page_len, filters):
 @frappe.whitelist()
 def get_purchase_invoices(doctype, txt, searchfield, start, page_len, filters):
 	query = """
-		select pi.name 
+		select pi.name
 		from `tabPurchase Invoice` pi, `tabPurchase Invoice Item` piitem
 		where pi.docstatus = 1 and piitem.parent = pi.name
 		and pi.name like {txt}""".format(txt = frappe.db.escape('%{0}%'.format(txt)))
@@ -506,3 +512,27 @@ def get_purchase_invoices(doctype, txt, searchfield, start, page_len, filters):
 		query += " and piitem.item_code = {item_code}".format(item_code = frappe.db.escape(filters.get('item_code')))
 
 	return frappe.db.sql(query, filters)
+
+@frappe.whitelist()
+def get_tax_template(doctype, txt, searchfield, start, page_len, filters):
+
+	item_doc = frappe.get_cached_doc('Item', filters.get('item_code'))
+	item_group = filters.get('item_group')
+	taxes = item_doc.taxes or []
+
+	while item_group:
+		item_group_doc = frappe.get_cached_doc('Item Group', item_group)
+		taxes += item_group_doc.taxes or []
+		item_group = item_group_doc.parent_item_group
+
+	if not taxes:
+		return frappe.db.sql(""" SELECT name FROM `tabItem Tax Template` """)
+	else:
+		args = {
+			'item_code': filters.get('item_code'),
+			'posting_date': filters.get('valid_from'),
+			'tax_category': filters.get('tax_category')
+		}
+
+		taxes = _get_item_tax_template(args, taxes, for_validate=True)
+		return [(d,) for d in set(taxes)]

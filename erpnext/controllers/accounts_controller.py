@@ -19,6 +19,7 @@ from erpnext.accounts.doctype.pricing_rule.utils import (apply_pricing_rule_on_t
 from erpnext.exceptions import InvalidCurrency
 from six import text_type
 from erpnext.accounts.doctype.accounting_dimension.accounting_dimension import get_accounting_dimensions
+from erpnext.stock.get_item_details import get_item_warehouse
 
 force_item_fields = ("item_group", "brand", "stock_uom", "is_fixed_asset", "item_tax_rate", "pricing_rules")
 
@@ -61,7 +62,6 @@ class AccountsController(TransactionBase):
 						_('{0} is blocked so this transaction cannot proceed'.format(supplier_name)), raise_exception=1)
 
 	def validate(self):
-
 		if not self.get('is_return'):
 			self.validate_qty_is_not_zero()
 
@@ -100,10 +100,22 @@ class AccountsController(TransactionBase):
 
 			if self.is_return:
 				self.validate_qty()
+			else:
+				self.validate_deferred_start_and_end_date()
 
 		validate_regional(self)
 		if self.doctype != 'Material Request':
 			apply_pricing_rule_on_transaction(self)
+
+	def validate_deferred_start_and_end_date(self):
+		for d in self.items:
+			if d.get("enable_deferred_revenue") or d.get("enable_deferred_expense"):
+				if not (d.service_start_date and d.service_end_date):
+					frappe.throw(_("Row #{0}: Service Start and End Date is required for deferred accounting").format(d.idx))
+				elif getdate(d.service_start_date) > getdate(d.service_end_date):
+					frappe.throw(_("Row #{0}: Service Start Date cannot be greater than Service End Date").format(d.idx))
+				elif getdate(self.posting_date) > getdate(d.service_end_date):
+					frappe.throw(_("Row #{0}: Service End Date cannot be before Invoice Posting Date").format(d.idx))
 
 	def validate_invoice_documents_schedule(self):
 		self.validate_payment_schedule_dates()
@@ -308,8 +320,8 @@ class AccountsController(TransactionBase):
 					if item.get('discount_amount'):
 						item.rate = item.price_list_rate - item.discount_amount
 
-			elif pricing_rule_args.get('free_item'):
-				apply_pricing_rule_for_free_items(self, pricing_rule_args)
+			elif pricing_rule_args.get('free_item_data'):
+				apply_pricing_rule_for_free_items(self, pricing_rule_args.get('free_item_data'))
 
 		elif pricing_rule_args.get("validate_applied_rule"):
 			for pricing_rule in get_applied_pricing_rules(item):
@@ -1111,39 +1123,67 @@ def get_supplier_block_status(party_name):
 	}
 	return info
 
-def set_sales_order_defaults(parent_doctype, parent_doctype_name, child_docname, item_code):
+def set_sales_order_defaults(parent_doctype, parent_doctype_name, child_docname, trans_item):
 	"""
 	Returns a Sales Order Item child item containing the default values
 	"""
-	p_doctype = frappe.get_doc(parent_doctype, parent_doctype_name)
-	child_item = frappe.new_doc('Sales Order Item', p_doctype, child_docname)
-	item = frappe.get_doc("Item", item_code)
+	p_doc = frappe.get_doc(parent_doctype, parent_doctype_name)
+	child_item = frappe.new_doc('Sales Order Item', p_doc, child_docname)
+	item = frappe.get_doc("Item", trans_item.get('item_code'))
 	child_item.item_code = item.item_code
 	child_item.item_name = item.item_name
 	child_item.description = item.description
-	child_item.reqd_by_date = p_doctype.delivery_date
+	child_item.delivery_date = trans_item.get('delivery_date') or p_doc.delivery_date
 	child_item.uom = item.stock_uom
-	child_item.conversion_factor = get_conversion_factor(item_code, item.stock_uom).get("conversion_factor") or 1.0
+	child_item.conversion_factor = get_conversion_factor(item.item_code, item.stock_uom).get("conversion_factor") or 1.0
+	child_item.warehouse = get_item_warehouse(item, p_doc, overwrite_warehouse=True)
+	if not child_item.warehouse:
+		frappe.throw(_("Cannot find {} for item {}. Please set the same in Item Master or Stock Settings.")
+			.format(frappe.bold("default warehouse"), frappe.bold(item.item_code)))
 	return child_item
 
 
-def set_purchase_order_defaults(parent_doctype, parent_doctype_name, child_docname, item_code):
+def set_purchase_order_defaults(parent_doctype, parent_doctype_name, child_docname, trans_item):
 	"""
 	Returns a Purchase Order Item child item containing the default values
 	"""
-	p_doctype = frappe.get_doc(parent_doctype, parent_doctype_name)
-	child_item = frappe.new_doc('Purchase Order Item', p_doctype, child_docname)
-	item = frappe.get_doc("Item", item_code)
+	p_doc = frappe.get_doc(parent_doctype, parent_doctype_name)
+	child_item = frappe.new_doc('Purchase Order Item', p_doc, child_docname)
+	item = frappe.get_doc("Item", trans_item.get('item_code'))
 	child_item.item_code = item.item_code
 	child_item.item_name = item.item_name
 	child_item.description = item.description
-	child_item.schedule_date = p_doctype.schedule_date
+	child_item.schedule_date = trans_item.get('schedule_date') or p_doc.schedule_date
 	child_item.uom = item.stock_uom
-	child_item.conversion_factor = get_conversion_factor(item_code, item.stock_uom).get("conversion_factor") or 1.0
+	child_item.conversion_factor = get_conversion_factor(item.item_code, item.stock_uom).get("conversion_factor") or 1.0
 	child_item.base_rate = 1 # Initiallize value will update in parent validation
 	child_item.base_amount = 1 # Initiallize value will update in parent validation
 	return child_item
 
+def check_and_delete_children(parent, data):
+	deleted_children = []
+	updated_item_names = [d.get("docname") for d in data]
+	for item in parent.items:
+		if item.name not in updated_item_names:
+			deleted_children.append(item)
+
+	for d in deleted_children:
+		if parent.doctype == "Sales Order":
+			if flt(d.delivered_qty):
+				frappe.throw(_("Row #{0}: Cannot delete item {1} which has already been delivered").format(d.idx, d.item_code))
+			if flt(d.work_order_qty):
+				frappe.throw(_("Row #{0}: Cannot delete item {1} which has work order assigned to it.").format(d.idx, d.item_code))
+			if flt(d.ordered_qty):
+				frappe.throw(_("Row #{0}: Cannot delete item {1} which is assigned to customer's purchase order.").format(d.idx, d.item_code))
+
+		if parent.doctype == "Purchase Order" and flt(d.received_qty):
+			frappe.throw(_("Row #{0}: Cannot delete item {1} which has already been received").format(d.idx, d.item_code))
+		
+		if flt(d.billed_amt):
+			frappe.throw(_("Row #{0}: Cannot delete item {1} which has already been billed.").format(d.idx, d.item_code))
+
+		d.cancel()
+		d.delete()
 
 @frappe.whitelist()
 def update_child_qty_rate(parent_doctype, trans_items, parent_doctype_name, child_docname="items"):
@@ -1152,16 +1192,20 @@ def update_child_qty_rate(parent_doctype, trans_items, parent_doctype_name, chil
 	sales_doctypes = ['Sales Order', 'Sales Invoice', 'Delivery Note', 'Quotation']
 	parent = frappe.get_doc(parent_doctype, parent_doctype_name)
 
+	check_and_delete_children(parent, data)
+
 	for d in data:
 		new_child_flag = False
 		if not d.get("docname"):
 			new_child_flag = True
 			if parent_doctype == "Sales Order":
-				child_item  = set_sales_order_defaults(parent_doctype, parent_doctype_name, child_docname, d.get("item_code"))
+				child_item  = set_sales_order_defaults(parent_doctype, parent_doctype_name, child_docname, d)
 			if parent_doctype == "Purchase Order":
-				child_item = set_purchase_order_defaults(parent_doctype, parent_doctype_name, child_docname, d.get("item_code"))
+				child_item = set_purchase_order_defaults(parent_doctype, parent_doctype_name, child_docname, d)
 		else:
 			child_item = frappe.get_doc(parent_doctype + ' Item', d.get("docname"))
+			if flt(child_item.get("rate")) == flt(d.get("rate")) and flt(child_item.get("qty")) == flt(d.get("qty")):
+				continue
 
 		if parent_doctype == "Sales Order" and flt(d.get("qty")) < flt(child_item.delivered_qty):
 			frappe.throw(_("Cannot set quantity less than delivered quantity"))
@@ -1202,6 +1246,7 @@ def update_child_qty_rate(parent_doctype, trans_items, parent_doctype_name, chil
 
 		child_item.flags.ignore_validate_update_after_submit = True
 		if new_child_flag:
+			parent.load_from_db()
 			child_item.idx = len(parent.items) + 1
 			child_item.insert()
 		else:
